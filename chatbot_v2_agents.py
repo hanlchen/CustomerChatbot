@@ -645,6 +645,28 @@ def get_order_details(customer_id: int, order_id: int) -> str:
     return json.dumps(results, indent=2, default=str)
 
 
+def is_safe_sql_query(sql_query: str) -> tuple[bool, str]:
+    """Validate that a SQL query is a safe read-only SELECT.
+
+    Returns:
+        (is_safe, error_message). error_message is empty when safe.
+    """
+    sql_upper = sql_query.upper().strip()
+
+    if not sql_upper.startswith("SELECT"):
+        return False, "Error: Only SELECT queries are allowed."
+
+    forbidden = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "--", ";--"]
+    for word in forbidden:
+        if word in sql_upper:
+            return False, f"Error: Query contains forbidden keyword: {word}"
+
+    if "EMAIL" in sql_upper and "SELECT" in sql_upper:
+        return False, "Error: Cannot query email addresses for privacy."
+
+    return True, ""
+
+
 @function_tool
 def execute_custom_sql(customer_id: int, sql_query: str) -> str:
     """
@@ -655,18 +677,9 @@ def execute_custom_sql(customer_id: int, sql_query: str) -> str:
         customer_id: The customer's ID
         sql_query: The SQL SELECT query to execute
     """
-    sql_upper = sql_query.upper().strip()
-
-    if not sql_upper.startswith("SELECT"):
-        return "Error: Only SELECT queries are allowed."
-
-    forbidden = ["INSERT", "UPDATE", "DELETE", "DROP", "ALTER", "CREATE", "--", ";--"]
-    for word in forbidden:
-        if word in sql_upper:
-            return f"Error: Query contains forbidden keyword: {word}"
-
-    if "EMAIL" in sql_upper and "SELECT" in sql_upper:
-        return "Error: Cannot query email addresses for privacy."
+    safe, error = is_safe_sql_query(sql_query)
+    if not safe:
+        return error
 
     try:
         results = execute_query(sql_query)

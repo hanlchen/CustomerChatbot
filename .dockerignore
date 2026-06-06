@@ -1,0 +1,15 @@
+# Keep secrets and cruft out of the image
+.env
+.env.*
+*.env
+.git
+.gitignore
+.github
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+.DS_Store
+README.md
+tests/
