@@ -1,12 +1,10 @@
 """
-Test suite for chat endpoints and conversation management.
+Sessions, history and context: the state a conversation carries between turns.
 
-Tests:
-- Session creation
-- Message sending and receiving
-- Conversation history
-- Context tracking
-- Multi-turn conversations
+The agents are tested in test_retrieval.py and the identity gate in
+test_security.py. What is checked here is the layer underneath both -- that a
+session keeps its own history, that context set on one turn is still there on
+the next, and that the session cap actually caps.
 """
 
 import pytest
@@ -26,14 +24,14 @@ from mcp_server import CustomerChatbotTools
 
 @pytest.fixture(scope="function")
 def manager():
-    """Create fresh conversation manager for each test."""
+    """A manager with no sessions carried over from the last test."""
     reset_conversation_manager()
     return get_conversation_manager()
 
 
 @pytest.fixture(scope="session")
 def mcp_tools():
-    """Create MCP tools instance."""
+    """The tool surface, built once -- it holds no per-test state."""
     return CustomerChatbotTools()
 
 
@@ -42,10 +40,10 @@ def mcp_tools():
 # ============================================================================
 
 class TestConversationManager:
-    """Test conversation manager functionality."""
+    """Sessions, history and context."""
 
     def test_create_session(self, manager):
-        """Test creating a new session."""
+        """A new session is addressable by the id it hands back."""
         session_id = manager.create_session()
         assert session_id is not None
         assert len(session_id) > 0
@@ -55,7 +53,7 @@ class TestConversationManager:
         assert conversation.session_id == session_id
 
     def test_create_session_with_customer_id(self, manager):
-        """Test creating session with customer ID."""
+        """A customer id supplied up front lands in the context."""
         customer_id = "CUST-10000"
         session_id = manager.create_session(customer_id=customer_id)
 
@@ -63,7 +61,7 @@ class TestConversationManager:
         assert conversation.context.customer_id == customer_id
 
     def test_get_session_by_customer(self, manager):
-        """Test retrieving session by customer ID."""
+        """A returning customer resolves to their existing session."""
         customer_id = "CUST-10001"
         session_id = manager.create_session(customer_id=customer_id)
 
@@ -72,7 +70,7 @@ class TestConversationManager:
         assert conversation.session_id == session_id
 
     def test_add_message(self, manager):
-        """Test adding message to conversation."""
+        """A stored message keeps its role, text and timestamp."""
         session_id = manager.create_session()
 
         message = manager.add_message(
@@ -87,7 +85,7 @@ class TestConversationManager:
         assert message.timestamp is not None
 
     def test_message_with_intent(self, manager):
-        """Test adding message with intent."""
+        """The intent label travels with the message it describes."""
         session_id = manager.create_session()
 
         message = manager.add_message(
@@ -100,7 +98,7 @@ class TestConversationManager:
         assert message.intent == "order_tracking"
 
     def test_get_message_history(self, manager):
-        """Test retrieving message history."""
+        """History comes back in the order it was written."""
         session_id = manager.create_session()
 
         # Add multiple messages
@@ -114,7 +112,7 @@ class TestConversationManager:
         assert history[1]["role"] == "bot"
 
     def test_message_history_with_limit(self, manager):
-        """Test message history with limit."""
+        """A limit returns the most recent messages, not the first."""
         session_id = manager.create_session()
 
         # Add 5 messages
@@ -127,7 +125,7 @@ class TestConversationManager:
 
 
     def test_get_recent_context(self, manager):
-        """Test getting recent context as formatted string."""
+        """The context string carries both speakers and the known ids."""
         session_id = manager.create_session()
 
         manager.add_message(session_id, "customer", "Where is my order?")
@@ -144,7 +142,7 @@ class TestConversationManager:
         assert "CUST-10000" in context_str
 
     def test_end_session(self, manager):
-        """Test ending a session."""
+        """Ending a session makes it unreachable."""
         session_id = manager.create_session()
 
         result = manager.end_session(session_id)
@@ -155,30 +153,36 @@ class TestConversationManager:
         assert conversation is None
 
     def test_get_all_sessions(self, manager):
-        """Test getting all active sessions."""
+        """Every live session is listed."""
         manager.create_session()
         manager.create_session()
 
         all_sessions = manager.get_all_sessions()
         assert len(all_sessions) >= 2
 
-    def test_max_sessions_cleanup(self):
-        """Test automatic cleanup of old sessions."""
-        # Create manager with small max and keep_recent
-        small_manager = ConversationManager(max_sessions=10)
+    def test_the_session_cap_actually_caps(self):
+        """max_sessions was ignored for any value below 100.
 
-        # Create 15 sessions (should trigger cleanup)
-        session_ids = []
-        for i in range(15):
-            sid = small_manager.create_session()
-            session_ids.append(sid)
+        `_cleanup_old_sessions` defaulted `keep_recent` to a hardcoded 100 and
+        returned early while the count was under it, so a manager capped at 10
+        grew without limit. The test that used to live here created 15
+        sessions, asserted the list was non-empty and passed -- it would have
+        passed with cleanup deleted entirely.
+        """
+        manager = ConversationManager(max_sessions=10)
+        for _ in range(15):
+            manager.create_session()
 
-        # Should have cleaned up oldest sessions
-        sessions = small_manager.get_all_sessions()
-        # The cleanup keeps keep_recent (100 by default) which is more than 10 max_sessions
-        # So this is primarily testing that cleanup doesn't crash
-        assert sessions is not None
-        assert len(sessions) > 0
+        assert len(manager.get_all_sessions()) == 10
+
+    def test_the_cap_keeps_the_newest_sessions(self):
+        """Evicting the conversation someone is still typing into is the bad case."""
+        manager = ConversationManager(max_sessions=5)
+        ids = [manager.create_session() for _ in range(8)]
+
+        surviving = {s["session_id"] for s in manager.get_all_sessions()}
+        assert surviving == set(ids[-5:])
+        assert not surviving & set(ids[:3]), "an older session outlived a newer one"
 
 
 # ============================================================================
@@ -186,11 +190,11 @@ class TestConversationManager:
 # ============================================================================
 
 class TestResponseGenerator:
-    """Test response generation."""
+    """What every reply carries, whatever answered it."""
 
     @pytest.mark.asyncio
     async def test_generate_response(self, mcp_tools):
-        """Test basic response generation."""
+        """A turn always produces text, even with no model configured."""
         generator = ResponseGenerator(mcp_tools)
         context = ConversationContext()
         history = []
@@ -207,7 +211,7 @@ class TestResponseGenerator:
 
     @pytest.mark.asyncio
     async def test_response_intent_classification(self, mcp_tools):
-        """Test that response includes intent."""
+        """Every reply is labelled with a subject."""
         generator = ResponseGenerator(mcp_tools)
         context = ConversationContext()
 
@@ -222,7 +226,7 @@ class TestResponseGenerator:
 
     @pytest.mark.asyncio
     async def test_response_confidence_score(self, mcp_tools):
-        """Test that response includes confidence."""
+        """Confidence is present and in range."""
         generator = ResponseGenerator(mcp_tools)
         context = ConversationContext()
 
@@ -237,7 +241,7 @@ class TestResponseGenerator:
 
     @pytest.mark.asyncio
     async def test_response_with_actions(self, mcp_tools):
-        """Test that response can include suggested actions."""
+        """Buttons are always a list, never None."""
         generator = ResponseGenerator(mcp_tools)
         context = ConversationContext()
 
@@ -256,11 +260,11 @@ class TestResponseGenerator:
 # ============================================================================
 
 class TestMultiTurnConversation:
-    """Test multi-turn conversation flows."""
+    """What survives from one turn to the next."""
 
 
     def test_context_persistence(self, manager):
-        """Test that context persists across messages."""
+        """Context set on one turn is still there after another message."""
         session_id = manager.create_session()
 
         # Set initial context
@@ -279,7 +283,7 @@ class TestMultiTurnConversation:
         assert context.current_order_id == "ORD-100000"
 
     def test_multiple_sessions_isolation(self, manager):
-        """Test that sessions are isolated from each other."""
+        """Two conversations never see the other one's history."""
         session1 = manager.create_session(customer_id="CUST-10000")
         session2 = manager.create_session(customer_id="CUST-10001")
 
@@ -301,10 +305,10 @@ class TestMultiTurnConversation:
 # ============================================================================
 
 class TestChatIntegration:
-    """Test complete chat integration."""
+    """The conversation object as the API serialises it."""
 
     def test_conversation_dataclass_to_dict(self, manager):
-        """Test converting conversation to dict."""
+        """to_dict carries the fields the API promises."""
         session_id = manager.create_session()
         manager.add_message(session_id, "customer", "Hello")
         manager.add_message(session_id, "bot", "Hi!")
@@ -318,7 +322,7 @@ class TestChatIntegration:
         assert conv_dict["message_count"] == 2
 
     def test_message_timestamps(self, manager):
-        """Test that messages have proper timestamps."""
+        """Timestamps are ISO strings, which the transcript endpoint returns as-is."""
         session_id = manager.create_session()
 
         message = manager.add_message(session_id, "customer", "Test")
@@ -328,7 +332,7 @@ class TestChatIntegration:
         assert "T" in message.timestamp or "-" in message.timestamp
 
     def test_conversation_with_entities(self, manager):
-        """Test message with extracted entities."""
+        """Entities attached to a message survive the round trip."""
         session_id = manager.create_session()
 
         entities = [
@@ -346,7 +350,7 @@ class TestChatIntegration:
         assert message.entities == entities
 
     def test_conversation_with_metadata(self, manager):
-        """Test message with metadata."""
+        """Arbitrary metadata rides along without being reshaped."""
         session_id = manager.create_session()
 
         metadata = {

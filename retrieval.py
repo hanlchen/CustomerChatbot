@@ -413,6 +413,30 @@ class HybridRetriever:
 
     RRF_K = 60  # standard constant; damps the influence of low ranks
 
+    # Cosine floor for a passage the lexical side also found. Low on purpose:
+    # BM25 has already vouched for the passage, and the embedding is there to
+    # re-rank, not to decide.
+    SEMANTIC_FLOOR = 0.15
+
+    # Cosine floor for a passage ONLY the embedding found.
+    #
+    # A dense model has no way to say "nothing here is relevant". Asked for
+    # neighbours it returns neighbours, so a query with no bearing on the
+    # corpus comes back with whatever is least unlike it. `xqzjvw ptkgh`
+    # returned a passage about return shipping labels at rank 1, and the
+    # policy agent -- which is now made to search before it answers -- would
+    # have been handed that and told to answer from it.
+    #
+    # No lexical hit at all means the query shares no stem and no expanded
+    # concept with any document, so there is nothing corroborating the match
+    # and the bar has to be higher.
+    #
+    # NOTE: 0.45 is a considered default, not a measured one. Neither the dev
+    # container nor the author's laptop can reach the model weights, so the
+    # embedding path only runs in CI. `python eval_report.py` on a machine
+    # with model2vec installed is what would tune it.
+    SEMANTIC_ONLY_FLOOR = 0.45
+
     def __init__(self, chunks: Sequence[Chunk],
                  embedder: Optional[EmbeddingBackend] = None):
         self.chunks = list(chunks)
@@ -454,7 +478,13 @@ class HybridRetriever:
         ranked.sort(key=lambda pair: pair[1], reverse=True)
         return ranked
 
-    def _semantic_ranking(self, query: str) -> List[Tuple[int, float]]:
+    def _semantic_ranking(self, query: str,
+                          unsupported: bool = False) -> List[Tuple[int, float]]:
+        """Passages ranked by embedding similarity.
+
+        `unsupported` means the lexical pass found nothing, so these results
+        would stand alone. See SEMANTIC_ONLY_FLOOR.
+        """
         if self._matrix is None:
             return []
         try:
@@ -464,8 +494,8 @@ class HybridRetriever:
         scores = self._matrix @ vector
         ranked = [(i, float(s)) for i, s in enumerate(scores)]
         ranked.sort(key=lambda pair: pair[1], reverse=True)
-        # Cosine similarity is always positive-ish here; keep a sane cutoff.
-        return [pair for pair in ranked if pair[1] > 0.15][:50]
+        floor = self.SEMANTIC_ONLY_FLOOR if unsupported else self.SEMANTIC_FLOOR
+        return [pair for pair in ranked if pair[1] > floor][:50]
 
     def search(self, query: str, top_k: int = 4,
                doc_type: Optional[str] = None) -> List[Hit]:
@@ -474,7 +504,7 @@ class HybridRetriever:
             return []
 
         lexical = self._lexical_ranking(query)
-        semantic = self._semantic_ranking(query)
+        semantic = self._semantic_ranking(query, unsupported=not lexical)
 
         if not lexical and not semantic:
             return []

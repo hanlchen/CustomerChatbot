@@ -278,7 +278,17 @@ class TestDotEnvIsActuallyRead:
         happens in the wrong order if `.env` is read late, and the failure is
         silent -- the app runs, traces just never appear, and you find out
         after a debugging session that there was nothing to look at.
+
+        Skipped where langsmith is not installed. It is deliberately not in
+        requirements.txt -- tracing is opt-in, the README says `pip install
+        langsmith`, and `tracing.py` is a no-op without it. Pinning it just to
+        keep this test green would make every clone install a dependency the
+        app does not need, which is the wrong way round: the test should match
+        the design, not the design the test.
         """
+        pytest.importorskip(
+            "langsmith",
+            reason="tracing is an optional extra; `pip install langsmith`")
         import tracing
 
         monkeypatch.setenv("LANGSMITH_TRACING", "true")

@@ -313,8 +313,21 @@ class ConversationManager:
         """Get list of all active sessions."""
         return [conv.to_dict() for conv in self.conversations.values()]
 
-    def _cleanup_old_sessions(self, keep_recent: int = 100) -> None:
-        """Remove oldest sessions when max is reached."""
+    def _cleanup_old_sessions(self, keep_recent: Optional[int] = None) -> None:
+        """Drop the oldest sessions once the cap is passed.
+
+        `keep_recent` used to default to a hardcoded 100, which made
+        `max_sessions` a lie in both directions. Below 100 it did nothing:
+        `create_session` called this at max_sessions + 1, and it returned
+        immediately because the count was still under 100, so a manager built
+        with `max_sessions=10` grew without limit. Above 100 it overshot: the
+        default 1000-session cap was trimmed to 100, throwing away 900 live
+        conversations instead of one.
+
+        Trimming to `max_sessions` is what the name promised all along.
+        """
+        keep_recent = keep_recent if keep_recent is not None else self.max_sessions
+        keep_recent = max(1, keep_recent)
         if len(self.conversations) <= keep_recent:
             return
 

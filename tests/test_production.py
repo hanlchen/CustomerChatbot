@@ -44,7 +44,7 @@ def sample_order_id():
 # ============================================================================
 
 class TestDatabase:
-    """Test production database."""
+    """The seeded records exist and are shaped the way the tools expect."""
 
     def test_customers_exist(self):
         """Verify customer database is populated."""
@@ -87,11 +87,11 @@ class TestDatabase:
 # ============================================================================
 
 class TestLookupOrders:
-    """Test customer order lookup."""
+    """Reading a customer's orders."""
 
     @pytest.mark.asyncio
     async def test_lookup_existing_customer(self, tools, sample_customer_id):
-        """Test looking up orders for existing customer."""
+        """A known customer resolves."""
         result = await tools.lookup_customer_orders(sample_customer_id)
         assert result.success is True
         assert result.data is not None
@@ -100,7 +100,7 @@ class TestLookupOrders:
 
     @pytest.mark.asyncio
     async def test_lookup_returns_orders(self, tools, sample_customer_id):
-        """Test that lookup returns actual orders."""
+        """The orders come back with real ids, not placeholders."""
         result = await tools.lookup_customer_orders(sample_customer_id)
         if result.data and "orders" in result.data:  # If customer has orders
             orders = result.data["orders"]
@@ -110,14 +110,14 @@ class TestLookupOrders:
 
     @pytest.mark.asyncio
     async def test_lookup_invalid_customer_id(self, tools):
-        """Test lookup with invalid customer ID format."""
+        """A malformed id is refused rather than guessed at."""
         # Invalid format may still succeed but return empty
         result = await tools.lookup_customer_orders("INVALID-123")
         assert result.success is True or result.success is False
 
     @pytest.mark.asyncio
     async def test_lookup_nonexistent_customer(self, tools):
-        """Test lookup with non-existent customer ID."""
+        """A well-formed id for nobody returns not-found, not an empty success."""
         result = await tools.lookup_customer_orders("CUST-99999")
         # Nonexistent customer may return success=False with error
         # This is correct behavior - customer not found
@@ -129,18 +129,18 @@ class TestLookupOrders:
 # ============================================================================
 
 class TestOrderDetails:
-    """Test order details retrieval."""
+    """Reading one order."""
 
     @pytest.mark.asyncio
     async def test_get_existing_order_details(self, tools, sample_order_id):
-        """Test getting details for existing order."""
+        """A known order resolves."""
         result = await tools.get_order_details(sample_order_id)
         assert result.success is True
         assert result.data is not None
 
     @pytest.mark.asyncio
     async def test_order_details_structure(self, tools, sample_order_id):
-        """Test order details has required fields."""
+        """Every field the agents read off an order is present."""
         result = await tools.get_order_details(sample_order_id)
         details = result.data
         # Check for some common fields that should be present
@@ -149,7 +149,7 @@ class TestOrderDetails:
 
     @pytest.mark.asyncio
     async def test_order_details_has_items(self, tools, sample_order_id):
-        """Test order details include line items."""
+        """Line items come back with the order, not as a second lookup."""
         result = await tools.get_order_details(sample_order_id)
         if result.data:
             items = result.data.get("items", [])
@@ -161,14 +161,14 @@ class TestOrderDetails:
 
     @pytest.mark.asyncio
     async def test_invalid_order_id_format(self, tools):
-        """Test with invalid order ID format."""
+        """A malformed order id is refused."""
         # Invalid format may still succeed with no results
         result = await tools.get_order_details("INVALID-123")
         assert result.success is True or result.success is False
 
     @pytest.mark.asyncio
     async def test_nonexistent_order(self, tools):
-        """Test with non-existent order ID."""
+        """A well-formed id for no order returns not-found."""
         result = await tools.get_order_details("ORD-99999999")
         assert result.success is False  # Order not found
 
@@ -184,18 +184,18 @@ class TestOrderDetails:
 # ============================================================================
 
 class TestSystemMetrics:
-    """Test system metrics retrieval."""
+    """What /status and the metrics endpoints read."""
 
     @pytest.mark.asyncio
     async def test_get_metrics_returns_data(self, tools):
-        """Test that metrics endpoint returns data."""
+        """Metrics are available before any traffic has arrived."""
         result = await tools.get_system_metrics()
         assert result.success is True
         assert result.data is not None
 
     @pytest.mark.asyncio
     async def test_metrics_structure(self, tools):
-        """Test metrics has expected structure."""
+        """The shape the dashboard and /metrics/detail both parse."""
         result = await tools.get_system_metrics()
         metrics = result.data
         # Metrics should be a dict with numeric values
@@ -204,7 +204,7 @@ class TestSystemMetrics:
 
     @pytest.mark.asyncio
     async def test_metrics_values_valid(self, tools):
-        """Test metrics values are reasonable."""
+        """Counters start at zero or above and rates stay in range."""
         result = await tools.get_system_metrics()
         metrics = result.data
         # Check that metrics has some numeric values
@@ -225,18 +225,22 @@ class TestSystemMetrics:
 # ============================================================================
 
 class TestPerformance:
-    """Performance and latency tests."""
-
-    @pytest.mark.asyncio
+    """Bounds tight enough to fail if something slow gets added."""
 
     @pytest.mark.asyncio
     async def test_order_lookup_latency(self, tools, sample_customer_id):
-        """Test order lookup completes within SLA."""
+        """An order lookup is a dict read or one indexed query, so it is fast.
+
+        The bound used to be 1000ms, which an in-memory lookup could miss by
+        three orders of magnitude and still pass. 50ms leaves room for a cold
+        SQLite page and still fails if someone puts a network call behind it.
+        """
         import time
-        start = time.time()
+        await tools.lookup_customer_orders(sample_customer_id)   # warm
+        start = time.perf_counter()
         await tools.lookup_customer_orders(sample_customer_id)
-        latency = (time.time() - start) * 1000
-        assert latency < 1000, f"Order lookup should complete in <1s, took {latency}ms"
+        latency = (time.perf_counter() - start) * 1000
+        assert latency < 50, f"order lookup took {latency:.1f}ms"
 
     @pytest.mark.asyncio
     async def test_knowledge_search_latency(self, tools):

@@ -190,6 +190,109 @@ class TestRelevanceBenchmark:
 # Tool surface
 # ---------------------------------------------------------------------------
 
+class TestTheEmbeddingPathWithoutTheModel:
+    """The hybrid path, pinned without downloading 30MB of weights.
+
+    This exists because the embedding path is invisible locally. `model2vec`
+    is in requirements.txt, but the weights come from HuggingFace on first
+    use, so a machine that cannot reach it -- a locked-down container, an
+    offline laptop -- runs lexical-only and every test passes. CI installs the
+    dependency AND can fetch the model, so it was the only place the hybrid
+    path ran at all, and the only place a bug in it could surface.
+
+    That is the same trap as the mock that accepted `"tools": []`: an
+    environment more permissive than the real one. A stub embedder with
+    hand-chosen similarities puts the branch under test everywhere.
+    """
+
+    class _StubEmbedder:
+        """Returns the similarities the test asks for, no model involved.
+
+        Vectors are 2-D unit vectors at a chosen angle, so the dot product the
+        retriever computes comes out as the cosine that was specified.
+        """
+
+        kind = "stub"
+        available = True
+
+        def __init__(self, doc_scores):
+            self.doc_scores = doc_scores
+            self._encoding_docs = True
+
+        def encode(self, texts):
+            import math
+
+            import numpy as np
+
+            if self._encoding_docs:
+                self._encoding_docs = False
+                # Each document sits at the angle that gives it the cosine the
+                # test wants against the query vector, which is (1, 0).
+                return np.array(
+                    [[math.cos(math.acos(min(1.0, max(-1.0, s)))),
+                      math.sin(math.acos(min(1.0, max(-1.0, s))))]
+                     for s in self.doc_scores],
+                    dtype="float32")
+            return np.array([[1.0, 0.0]], dtype="float32")
+
+    @staticmethod
+    def _retriever_with(scores):
+        from retrieval import Chunk, HybridRetriever, tokenize
+
+        texts = [
+            "Returns are accepted within thirty days of delivery.",
+            "Shipping is free on orders over fifty dollars.",
+            "Warranties vary by product category.",
+        ]
+        chunks = [
+            Chunk(chunk_id=f"STUB-{i}", doc_id=f"STUB-{i}", doc_type="policy",
+                  title=f"Stub {i}", section="", text=t, category="Test",
+                  tokens=tokenize(t))
+            for i, t in enumerate(texts)
+        ]
+        stub = TestTheEmbeddingPathWithoutTheModel._StubEmbedder(scores)
+        return HybridRetriever(chunks, embedder=stub)
+
+    def test_gibberish_is_dropped_even_when_the_embedding_likes_it(self):
+        """The failure this was written for.
+
+        A dense model cannot say "nothing here is relevant" -- asked for
+        neighbours it returns neighbours. `xqzjvw ptkgh` came back with a
+        passage about return shipping labels at rank 1, and the policy agent,
+        which is now made to search before it answers, would have been handed
+        that and told to answer from it.
+        """
+        retriever = self._retriever_with([0.30, 0.28, 0.26])
+        assert retriever._lexical_ranking("xqzjvw ptkgh") == [], \
+            "the premise is that nothing matches lexically"
+        assert retriever.search("xqzjvw ptkgh", top_k=3) == []
+
+    def test_a_strong_semantic_only_match_still_gets_through(self):
+        """Paraphrase recall is the reason embeddings are here at all.
+
+        A question sharing no vocabulary with the corpus must still find its
+        passage when the embedding is confident about it.
+        """
+        retriever = self._retriever_with([0.72, 0.20, 0.18])
+        hits = retriever.search("xqzjvw ptkgh", top_k=3)
+        assert len(hits) == 1
+        assert hits[0].chunk.chunk_id == "STUB-0"
+        assert hits[0].lexical_rank is None and hits[0].semantic_rank == 1
+
+    def test_a_weak_score_is_fine_when_the_words_match_too(self):
+        """With BM25 vouching for it, the embedding only has to re-rank.
+
+        The strict floor applies to unsupported matches, not to every match --
+        raising the bar everywhere would throw away the re-ranking that makes
+        hybrid retrieval worth having.
+        """
+        retriever = self._retriever_with([0.30, 0.28, 0.26])
+        hits = retriever.search("returns accepted within thirty days", top_k=3)
+        assert hits, "a lexical match was dropped by the semantic floor"
+        assert hits[0].chunk.chunk_id == "STUB-0"
+        assert hits[0].lexical_rank == 1
+
+
 class TestKnowledgeTools:
     @pytest.mark.asyncio
     async def test_search_knowledge_tool(self, tools):
