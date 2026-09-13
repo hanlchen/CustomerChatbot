@@ -1,15 +1,39 @@
-# Secrets — never commit API keys
+# Secrets: never commit API keys
 .env
 .env.*
 *.env
-.streamlit/secrets.toml
+
+# ...but the template carries no secrets and must be committed.
+!.env.example
 
 # Python
 __pycache__/
 *.py[cod]
+*.egg-info/
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .venv/
 venv/
 
+# Local model caches (embeddings download on first use)
+.cache/
+models/
+
+# Scratch
+_to_delete/
+*.log
+
+# Eval run history is local: each card is stamped with the machine's model and
+# git SHA, so committing them makes every clone's baseline someone else's.
+eval_runs/*.json
+
 # macOS
 .DS_Store
+
+# Persistent telemetry: contains full transcripts and any digits typed
+# during phone verification. Never commit.
+telemetry.db
+telemetry.db-wal
+telemetry.db-shm
+*.db

@@ -1,15 +1,31 @@
-# Keep secrets and cruft out of the image
+# The Dockerfile does `COPY . .`, so anything not excluded here is baked into
+# the image and ships with it. A .env sitting in the build directory would go
+# in with the API keys still in it.
 .env
 .env.*
-*.env
-.git
-.gitignore
-.github
+!.env.example
+
+# Local databases. telemetry.db holds full transcripts, including any digits
+# typed during phone verification; customer.db is rebuilt by seed_db.py.
+*.db
+*.db-wal
+*.db-shm
+
+# Build noise and local state
 __pycache__/
 *.py[cod]
 .pytest_cache/
+.mypy_cache/
+.ruff_cache/
 .venv/
 venv/
+.cache/
+models/
+eval_runs/
+_to_delete/
+*.log
+
+.git/
+.github/
+.gitignore
 .DS_Store
-README.md
-tests/

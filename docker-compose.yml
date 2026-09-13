@@ -1,0 +1,32 @@
+# CustomerChatbot — local run
+#
+#   ANTHROPIC_API_KEY=sk-... docker compose up --build
+#
+# A model is required. Started with neither ANTHROPIC_API_KEY nor
+# CHATBOT_BASE_URL the container boots and serves, but every turn answers
+# "unavailable" -- /status says which, and why.
+#
+# Then open http://localhost:8000/ui
+
+services:
+  chatbot:
+    build: .
+    image: customerchatbot:latest
+    ports:
+      - "8000:8000"
+    environment:
+      ENVIRONMENT: production
+      LOG_LEVEL: INFO
+      # Passed through from your shell if set. Absent means no model, and
+      # every turn answers "unavailable" -- see the note at the top.
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      CHATBOT_BASE_URL: ${CHATBOT_BASE_URL:-}
+      CHATBOT_ENGINE: ${CHATBOT_ENGINE:-auto}
+      CHATBOT_MODEL: ${CHATBOT_MODEL:-claude-sonnet-4-5}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/health', timeout=4).status == 200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      start_period: 20s
+      retries: 3
+    restart: unless-stopped

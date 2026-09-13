@@ -1,13 +1,70 @@
-streamlit>=1.28.0
-langchain>=0.1.0
-langchain-openai>=0.0.5
-langchain-pinecone>=0.1.0
-pinecone-client>=3.0.0
-python-dotenv>=1.0.0
-sqlalchemy>=2.0.0
-openai>=1.0.0
-openai-agents>=0.0.3
-langsmith>=0.1.0
-pyyaml>=6.0.0
-pytest>=8.0.0
-pytest-asyncio>=0.23.0
+# CustomerChatbot dependencies
+#
+# Only what the application actually imports. Everything below the core block
+# is optional -- the chatbot starts and answers questions without any of it,
+# using the deterministic rules engine and lexical retrieval.
+#
+#   pip install -r requirements.txt
+
+# ---------------------------------------------------------------------------
+# Core (required)
+# ---------------------------------------------------------------------------
+fastapi>=0.104,<1.0
+uvicorn[standard]>=0.24,<1.0
+pydantic>=2.5,<3.0
+python-dotenv>=1.0,<2.0
+
+# ---------------------------------------------------------------------------
+# Optional: LLM reasoning engine
+#
+# With this installed AND ANTHROPIC_API_KEY set, Claude drives tool selection
+# and writes the replies. Without it the rules engine handles every turn.
+#   pip install anthropic
+# ---------------------------------------------------------------------------
+anthropic>=0.40
+
+# ---------------------------------------------------------------------------
+# Optional: self-hosted / OpenAI-compatible model server
+#
+# Needed to talk to vLLM, SGLang, llama.cpp, Ollama, LM Studio or Docker
+# Model Runner. The SDK is small; the model server is a separate install.
+#   pip install openai
+# See start_vllm.sh for launching vLLM with tool calling enabled.
+# ---------------------------------------------------------------------------
+openai>=1.40
+
+# ---------------------------------------------------------------------------
+# Optional: dense embeddings for policy search
+#
+# Adds semantic similarity on top of the built-in lexical + concept matching.
+# model2vec is the light option (numpy only, ~30MB model, no torch); it
+# downloads its model on first use. sentence-transformers works too and is
+# picked up automatically if present, but pulls in torch (~2GB).
+#   pip install model2vec
+# ---------------------------------------------------------------------------
+model2vec>=0.3
+numpy>=1.24
+
+# ---------------------------------------------------------------------------
+# Testing
+# ---------------------------------------------------------------------------
+pytest>=7.4,<9.0
+pytest-asyncio>=0.21
+httpx>=0.25
+
+# ---------------------------------------------------------------------------
+# Removed on purpose
+#
+# sqlalchemy / psycopg2  - the database is in-memory; nothing connects to SQL
+# openai / pinecone      - only chatbot_v2_agents.py (the retired Streamlit
+#                          prototype) imported these
+# chromadb               - superseded by retrieval.py
+# streamlit              - the web UI is chat_interface.html
+# prometheus-client      - metrics are served from /metrics directly
+# PyJWT / cryptography    - no auth layer is implemented yet
+# aiohttp                - imported in a stdio-server branch that is not used
+# black / flake8 / mypy  - dev tools; install separately if you want them
+# ---------------------------------------------------------------------------
+
+# Optional: per-run tracing. See README, "Observability".
+# langsmith>=0.1
