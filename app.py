@@ -554,7 +554,7 @@ async def get_recent_turns(limit: int = 50):
 @app.get("/metrics/dashboard", tags=["Metrics"], response_class=HTMLResponse)
 async def metrics_dashboard():
     """The same numbers, readable without a JSON formatter."""
-    page = os.path.join(os.path.dirname(__file__), "metrics_dashboard.html")
+    page = os.path.join(os.path.dirname(__file__), "static", "metrics_dashboard.html")
     try:
         with open(page, encoding="utf-8") as handle:
             return HTMLResponse(content=handle.read())
@@ -622,9 +622,10 @@ async def chat_ui():
     from fastapi.responses import FileResponse
 
     ui_path = os.path.join(os.path.dirname(os.path.abspath(__file__)),
-                           "chat_interface.html")
+                           "static", "chat_interface.html")
     if not os.path.exists(ui_path):
-        raise HTTPException(status_code=404, detail="chat_interface.html not found")
+        raise HTTPException(status_code=404,
+                            detail="static/chat_interface.html not found")
     return FileResponse(ui_path, media_type="text/html")
 
 

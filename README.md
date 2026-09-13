@@ -396,19 +396,25 @@ mock_vllm_server.py       Scripted stand-in for vLLM, used by tests
 start_vllm.sh             Launch vLLM with tool calling enabled
 local_model_setup.sh      Guided local-model setup for Apple Silicon
 
-chat_interface.html       Chat UI, single self-contained file
-metrics_dashboard.html    Served at /metrics/dashboard
+static/
+  chat_interface.html     Chat UI, single self-contained file
+  metrics_dashboard.html  Served at /metrics/dashboard
 
-test_retrieval.py         Retrieval benchmark, agent loop, triage, guards
-test_security.py          Verification gate, data isolation, caching, limits
-test_telemetry.py         Turn log persistence and health arithmetic
-test_customer_db.py       SQLite store, record equivalence, SQL injection
-test_eval_metrics.py      Scoring maths and regression detection
-test_regression.py        Bugs that must not come back
-test_chat.py              Conversation and session behaviour
-test_production.py        Tools and the data layer
-pytest.ini                Test discovery; testpaths is an explicit list
+tests/
+  test_retrieval.py       Retrieval benchmark, agent loop, triage, guards
+  test_security.py        Verification gate, data isolation, caching, limits
+  test_telemetry.py       Turn log persistence and health arithmetic
+  test_customer_db.py     SQLite store, record equivalence, SQL injection
+  test_eval_metrics.py    Scoring maths and regression detection
+  test_regression.py      Bugs that must not come back
+  test_chat.py            Conversation and session behaviour
+  test_production.py      Tools and the data layer
+pytest.ini                Test discovery and sys.path
 ```
+
+Tests import the application modules by plain name (`import llm_agent`), which
+works from `tests/` because `pytest.ini` puts the repo root on `pythonpath`.
+There is no `conftest.py` and no installed package.
 
 The dataset is generated from a fixed seed, so `CUST-10001` is the same person
 on every restart and in every process. The global RNG state is saved and

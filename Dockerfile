@@ -1,7 +1,7 @@
 # CustomerChatbot — FastAPI support agent
 #
-# Runs the API on :8000. The chat UI (chat_interface.html) is a static file
-# served from the same origin at /ui.
+# Runs the API on :8000. The chat UI (static/chat_interface.html) is served
+# from the same origin at /ui.
 #
 #   docker build -t customerchatbot .
 #   docker run -p 8000:8000 customerchatbot

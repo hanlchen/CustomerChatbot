@@ -11,6 +11,10 @@
 *.db-wal
 *.db-shm
 
+# Tests and their config do not belong in a runtime image.
+tests/
+pytest.ini
+
 # Build noise and local state
 __pycache__/
 *.py[cod]
